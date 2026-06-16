@@ -1,0 +1,339 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Exercise: Kanban Logic</title>
+    <!-- CSS IS PROVIDED AND COMPLETE - DO NOT EDIT STYLE -->
+    <style>
+        :root {
+            --bg-color: #f4f7f6;
+            --text-color: #333;
+            --border-color: #ddd;
+            --sl-critical: #d93535;
+            --sl-issues: #fd7e14;
+            --sl-maintenance: #ffc107;
+            --sl-unplanned: #6c757d;
+        }
+        body { margin: 0; font-family: sans-serif; background: var(--bg-color); color: var(--text-color); height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
+        .dashboard-container { display: flex; flex-direction: column; height: 100%; padding: 20px; overflow: auto; }
+        .header-row { display: flex; margin-bottom: 10px; padding-left: 20px; }
+        .column-header { flex: 1; text-align: center; background: white; padding: 10px; margin: 0 5px; border-bottom: 3px solid #ccc; font-weight: bold; }
+        .swimlane { margin-bottom: 20px; background: white; border: 1px solid var(--border-color); display: flex; flex-direction: column; }
+        .swimlane-header { padding: 5px 15px; color: white; font-weight: bold; display: flex; justify-content: space-between; align-items: center; }
+        .swimlane-body { display: flex; min-height: 120px; background: #f8f9fa; }
+        .swimlane-cell { flex: 1; padding: 10px; border-right: 1px dashed #e0e0e0; display: flex; flex-direction: column; gap: 10px; }
+        .sl-critical .swimlane-header { background-color: var(--sl-critical); }
+        .sl-issues .swimlane-header { background-color: var(--sl-issues); }
+        .sl-maintenance .swimlane-header { background-color: var(--sl-maintenance); color: #333; }
+        .sl-unplanned .swimlane-header { background-color: var(--sl-unplanned); }
+        .task { padding: 10px; border-radius: 4px; background: white; border-left: 4px solid #ccc; box-shadow: 0 1px 3px rgba(0,0,0,0.1); cursor: grab; }
+        .drag-over { background-color: rgba(0, 121, 191, 0.1); box-shadow: inset 0 0 0 2px #0079bf; }
+        .add-btn-small { background: rgba(255,255,255,0.3); border: none; cursor: pointer; padding: 2px 8px; }
+        
+        /* Modal Styles */
+        .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; }
+        .modal { background: white; padding: 20px; width: 300px; border-radius: 8px; }
+        .form-control { width: 100%; margin-bottom: 10px; padding: 5px; }
+    </style>
+</head>
+<body>
+
+    <div class="dashboard-container" id="dashboard">
+        <div class="header-row">
+            <div class="column-header" style="border-bottom-color: #0079bf;">To Do</div>
+            <div class="column-header" style="border-bottom-color: #ff9f1a;">In Progress</div>
+            <div class="column-header" style="border-bottom-color: #2ecc71;">Done</div>
+        </div>
+        <div id="swimlanes-container"></div>
+    </div>
+
+    <!-- Modal Form (Provided) -->
+    <div class="modal-overlay" id="taskModal">
+        <div class="modal">
+            <h2>Add Task</h2>
+            <select id="taskSwimlane" class="form-control">
+                <option value="critical">Critical</option>
+                <option value="issues">Issues</option>
+                <option value="maintenance">Maintenance</option>
+                <option value="unplanned">Unplanned</option>
+            </select>
+            <input type="text" id="taskTitle" class="form-control" placeholder="Title" />
+            <textarea id="taskDesc" class="form-control" placeholder="Description"></textarea>
+            <input type="color" id="taskColor" value="#ffffff" style="width:100%; height:40px;" />
+            <button onclick="saveTask()">Save</button>
+            <button onclick="closeModal()">Cancel</button>
+        </div>
+    </div>
+
+    <script>
+        // --- CONFIGURATION ---
+        const COLUMNS = ['todo', 'inprogress', 'done'];
+        const SWIMLANES = [
+            { id: 'critical', label: 'Critical', class: 'sl-critical' },
+            { id: 'issues', label: 'Issues Tickets', class: 'sl-issues' },
+            { id: 'maintenance', label: 'Maintenance', class: 'sl-maintenance' },
+            { id: 'unplanned', label: 'Unplanned', class: 'sl-unplanned' }
+        ];
+
+        let state = { tasks: [] };
+
+        let editingTaskId = null;
+
+        // --- STUDENT TASK 1: State Management ---
+        
+       function loadState() {
+            // TODO: Check if 'kanbanDashboardState' exists in localStorage
+            // TODO: If it exists, parse it and assign it to the 'state' variable 
+            console.log("Loading state..."); 
+            const saved = localStorage.getItem('kanbanDashboardState');
+            if (saved) {
+            state = JSON.parse(saved);
+            }
+        }
+
+        function saveState() {
+            // TODO: Save the current 'state' variable to localStorage as a JSON string
+            console.log("Saving state...");
+               localStorage.setItem('kanbanDashboardState',JSON.stringify(state));
+        }
+
+        // --- STUDENT TASK 2: Rendering ---
+
+        function renderBoard() {
+            const container = document.getElementById('swimlanes-container');
+            container.innerHTML = '';
+
+            SWIMLANES.forEach(sl => {
+                // 1. Create Swimlane Container (Provided)
+                const slDiv = document.createElement('div');
+                slDiv.className = `swimlane ${sl.class}`;
+                // 2. Create Header (Provided)
+                const header = document.createElement('div');
+                header.className = 'swimlane-header';
+                header.innerHTML = `<span>${sl.label}</span><button class="add-btn-small" onclick="openModal('${sl.id}')">+ Add Task</button>`;
+                slDiv.appendChild(header);
+
+                // 3. Create Body
+                const body = document.createElement('div');
+                body.className = 'swimlane-body';
+
+                COLUMNS.forEach(col => {
+                    const cell = document.createElement('div');
+                    cell.className = 'swimlane-cell';
+                    // These datasets are useful for the Drop event!
+                    cell.dataset.swimlane = sl.id;
+                    cell.dataset.column = col;
+
+                    // --- START STUDENT CODE ---
+                    // Filter tasks for this swimlane + column
+                    const filteredTasks = state.tasks.filter(t => 
+                        t.swimlane === sl.id && t.status === col
+                    );
+
+                    // Create and append task elements
+                    filteredTasks.forEach(task => {
+                        const taskEl = createTaskElement(task);
+                        cell.appendChild(taskEl);
+                    });
+                    // TODO: Filter 'state.tasks' to find tasks that match:
+                    //       1. t.swimlane === sl.id
+                    //       2. t.status === col
+                    
+                    // TODO: Loop through those filtered tasks, create an element using createTaskElement(task)
+                    //       and append it to 'cell'.
+                    // --- END STUDENT CODE ---
+
+                    attachDragEvents(cell);
+                    body.appendChild(cell);
+                });
+
+                slDiv.appendChild(body);
+                container.appendChild(slDiv);
+            });
+        }
+
+        // --- STUDENT TASK 3: Drag and Drop Logic ---
+
+        function attachDragEvents(cell) {
+            cell.addEventListener('dragover', (e) => {
+                e.preventDefault(); // Allows dropping
+                cell.classList.add('drag-over');
+            });
+
+            cell.addEventListener('dragleave', () => {
+                cell.classList.remove('drag-over');
+            });
+
+            cell.addEventListener('drop', (e) => {
+                e.preventDefault();
+                cell.classList.remove('drag-over');
+
+                  const taskId = e.dataTransfer.getData('text/plain');
+                  const newSwimlane = cell.dataset.swimlane;
+                  const newStatus = cell.dataset.column;
+
+                  updateTaskLocation(taskId, newSwimlane, newStatus);
+
+                // TODO: Get the 'taskId' from e.dataTransfer
+                // TODO: Get the 'newSwimlane' from cell.dataset.swimlane
+                // TODO: Get the 'newStatus' from cell.dataset.column
+                
+                // TODO: Call updateTaskLocation(taskId, newSwimlane, newStatus)
+            });
+        }
+
+        function updateTaskLocation(taskId, newSwimlane, newStatus) {
+            // TODO: Find the task in 'state.tasks' using the taskId
+            // TODO: Update the task's .swimlane and .status properties
+            // TODO: Call saveState()
+            // TODO: Call renderBoard()
+            const task = state.tasks.find(t => t.id == taskId);
+
+             if (task) {
+            task.swimlane = newSwimlane;
+            task.status = newStatus;
+
+            saveState();
+            renderBoard();
+            console.log("Updating location", taskId, newSwimlane, newStatus);
+        }
+    }
+
+        function openEditModal(taskId) {
+    const task = state.tasks.find(t => t.id == taskId);
+    if (!task) return;
+
+    editingTaskId = taskId;
+
+    // Fill modal with existing values
+    titleInput.value = task.title;
+    descInput.value = task.description;
+    swimlaneSelect.value = task.swimlane;
+    colorInput.value = task.color;
+
+    modal.style.display = 'flex';
+}
+
+            function deleteTask(taskId) {
+    // Remove task from state
+            state.tasks = state.tasks.filter(t => t.id != taskId);
+
+    // Persist changes
+            saveState();
+
+    // Re-render board
+            renderBoard();
+        }
+        // --- HELPER FUNCTIONS (PROVIDED) ---
+
+       function createTaskElement(task) {
+    const el = document.createElement('div');
+    el.className = 'task';
+    el.draggable = true;
+    el.style.backgroundColor = task.color;
+
+    const title = document.createElement('div');
+    title.innerText = task.title;
+
+    // Button container
+    const btnContainer = document.createElement('div');
+    btnContainer.style.display = "flex";
+    btnContainer.style.justifyContent = "flex-end";
+    btnContainer.style.gap = "5px";
+
+    // Edit Button
+    const editBtn = document.createElement('button');
+    editBtn.innerText = "✎";
+    editBtn.style.border = "none";
+    editBtn.style.background = "transparent";
+    editBtn.style.cursor = "pointer";
+
+    editBtn.addEventListener('click', () => {
+        openEditModal(task.id);
+    });
+
+    // Delete Button
+    const deleteBtn = document.createElement('button');
+    deleteBtn.innerText = "✕";
+    deleteBtn.style.border = "none";
+    deleteBtn.style.background = "transparent";
+    deleteBtn.style.cursor = "pointer";
+
+    deleteBtn.addEventListener('click', () => {
+        if (confirm("Delete this task?")) {
+            deleteTask(task.id);
+        }
+    });
+
+    btnContainer.appendChild(editBtn);
+    btnContainer.appendChild(deleteBtn);
+
+    el.appendChild(btnContainer);
+    el.appendChild(title);
+
+    el.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/plain', task.id);
+        e.dataTransfer.effectAllowed = 'move';
+    });
+
+    return el;
+}
+        // Modal Logic
+        const modal = document.getElementById('taskModal');
+        const titleInput = document.getElementById('taskTitle');
+        const descInput = document.getElementById('taskDesc');
+        const swimlaneSelect = document.getElementById('taskSwimlane');
+        const colorInput = document.getElementById('taskColor');
+
+        window.openModal = function(swimlaneId) {
+            swimlaneSelect.value = swimlaneId;
+            modal.style.display = 'flex';
+        };
+
+        window.closeModal = function() { modal.style.display = 'none'; };
+
+       window.saveTask = function() {
+
+    if (editingTaskId) {
+        // EDIT MODE
+        const task = state.tasks.find(t => t.id == editingTaskId);
+
+        if (task) {
+            task.title = titleInput.value;
+            task.description = descInput.value;
+            task.swimlane = swimlaneSelect.value;
+            task.color = colorInput.value;
+        }
+
+        editingTaskId = null;
+
+    } else {
+        // CREATE MODE
+        const newTask = {
+            id: Date.now(),
+            title: titleInput.value,
+            description: descInput.value,
+            swimlane: swimlaneSelect.value,
+            status: 'todo',
+            color: colorInput.value
+        };
+
+        state.tasks.push(newTask);
+    }
+
+    saveState();
+    renderBoard();
+    closeModal();
+
+    // Reset form
+    titleInput.value = '';
+    descInput.value = '';
+};
+        // Initialize
+        loadState();
+        renderBoard();
+
+    </script>
+</body>
+</html>
