@@ -1,4 +1,4 @@
-# 📌 TaskFlow Kanban Board
+# 📌 Kanban Board
 
 A fully interactive **Kanban Task Management Dashboard** built with **HTML, CSS, and Vanilla JavaScript**. The application allows users to create, edit, delete, organize, and drag-and-drop tasks across multiple swimlanes and workflow stages while persisting data using **Local Storage**.
 
