@@ -30,7 +30,7 @@
         .task { padding: 10px; border-radius: 4px; background: white; border-left: 4px solid #ccc; box-shadow: 0 1px 3px rgba(0,0,0,0.1); cursor: grab; }
         .drag-over { background-color: rgba(0, 121, 191, 0.1); box-shadow: inset 0 0 0 2px #0079bf; }
         .add-btn-small { background: rgba(255,255,255,0.3); border: none; cursor: pointer; padding: 2px 8px; }
-        
+
         /* Modal Styles */
         .modal-overlay { display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); justify-content: center; align-items: center; }
         .modal { background: white; padding: 20px; width: 300px; border-radius: 8px; }
@@ -46,6 +46,18 @@
             <div class="column-header" style="border-bottom-color: #2ecc71;">Done</div>
         </div>
         <div id="swimlanes-container"></div>
+    </div>
+
+    <!-- Delete Confirmation Modal -->
+    <div class="modal-overlay" id="confirmModal">
+        <div class="modal">
+            <h2>Delete Task?</h2>
+            <p style="margin: 0 0 15px;">This action cannot be undone.</p>
+            <div style="display:flex; justify-content:flex-end; gap:8px;">
+                <button onclick="cancelDelete()">Cancel</button>
+                <button onclick="confirmDelete()" style="background:#d93535; color:white; border:none; padding:6px 12px; border-radius:4px;">Delete</button>
+            </div>
+        </div>
     </div>
 
     <!-- Modal Form (Provided) -->
@@ -79,23 +91,37 @@
         let state = { tasks: [] };
 
         let editingTaskId = null;
+        let pendingDeleteId = null;
 
         // --- STUDENT TASK 1: State Management ---
-        
-       function loadState() {
-            // TODO: Check if 'kanbanDashboardState' exists in localStorage
-            // TODO: If it exists, parse it and assign it to the 'state' variable 
-            console.log("Loading state..."); 
+
+        function loadState() {
+            // Load 'kanbanDashboardState' from localStorage.
+            // Wrapped in try/catch so a corrupted/invalid JSON value in
+            // localStorage cannot crash the app on startup (Issue 2 fix).
+            console.log("Loading state...");
             const saved = localStorage.getItem('kanbanDashboardState');
             if (saved) {
-            state = JSON.parse(saved);
+                try {
+                    const parsed = JSON.parse(saved);
+                    // Basic shape check so we don't adopt a malformed object either
+                    if (parsed && Array.isArray(parsed.tasks)) {
+                        state = parsed;
+                    } else {
+                        console.warn("Saved state was malformed. Falling back to default state.");
+                        state = { tasks: [] };
+                    }
+                } catch (err) {
+                    console.warn("Failed to parse saved state, using default state instead.", err);
+                    state = { tasks: [] };
+                }
             }
         }
 
         function saveState() {
-            // TODO: Save the current 'state' variable to localStorage as a JSON string
+            // Save the current 'state' variable to localStorage as a JSON string
             console.log("Saving state...");
-               localStorage.setItem('kanbanDashboardState',JSON.stringify(state));
+            localStorage.setItem('kanbanDashboardState', JSON.stringify(state));
         }
 
         // --- STUDENT TASK 2: Rendering ---
@@ -125,9 +151,8 @@
                     cell.dataset.swimlane = sl.id;
                     cell.dataset.column = col;
 
-                    // --- START STUDENT CODE ---
                     // Filter tasks for this swimlane + column
-                    const filteredTasks = state.tasks.filter(t => 
+                    const filteredTasks = state.tasks.filter(t =>
                         t.swimlane === sl.id && t.status === col
                     );
 
@@ -136,13 +161,6 @@
                         const taskEl = createTaskElement(task);
                         cell.appendChild(taskEl);
                     });
-                    // TODO: Filter 'state.tasks' to find tasks that match:
-                    //       1. t.swimlane === sl.id
-                    //       2. t.status === col
-                    
-                    // TODO: Loop through those filtered tasks, create an element using createTaskElement(task)
-                    //       and append it to 'cell'.
-                    // --- END STUDENT CODE ---
 
                     attachDragEvents(cell);
                     body.appendChild(cell);
@@ -169,116 +187,127 @@
                 e.preventDefault();
                 cell.classList.remove('drag-over');
 
-                  const taskId = e.dataTransfer.getData('text/plain');
-                  const newSwimlane = cell.dataset.swimlane;
-                  const newStatus = cell.dataset.column;
+                const taskId = e.dataTransfer.getData('text/plain');
+                const newSwimlane = cell.dataset.swimlane;
+                const newStatus = cell.dataset.column;
 
-                  updateTaskLocation(taskId, newSwimlane, newStatus);
-
-                // TODO: Get the 'taskId' from e.dataTransfer
-                // TODO: Get the 'newSwimlane' from cell.dataset.swimlane
-                // TODO: Get the 'newStatus' from cell.dataset.column
-                
-                // TODO: Call updateTaskLocation(taskId, newSwimlane, newStatus)
+                updateTaskLocation(taskId, newSwimlane, newStatus);
             });
         }
 
         function updateTaskLocation(taskId, newSwimlane, newStatus) {
-            // TODO: Find the task in 'state.tasks' using the taskId
-            // TODO: Update the task's .swimlane and .status properties
-            // TODO: Call saveState()
-            // TODO: Call renderBoard()
             const task = state.tasks.find(t => t.id == taskId);
 
-             if (task) {
-            task.swimlane = newSwimlane;
-            task.status = newStatus;
+            if (task) {
+                task.swimlane = newSwimlane;
+                task.status = newStatus;
 
-            saveState();
-            renderBoard();
-            console.log("Updating location", taskId, newSwimlane, newStatus);
+                saveState();
+                renderBoard();
+                console.log("Updating location", taskId, newSwimlane, newStatus);
+            }
         }
-    }
 
         function openEditModal(taskId) {
-    const task = state.tasks.find(t => t.id == taskId);
-    if (!task) return;
+            const task = state.tasks.find(t => t.id == taskId);
+            if (!task) return;
 
-    editingTaskId = taskId;
+            editingTaskId = taskId;
 
-    // Fill modal with existing values
-    titleInput.value = task.title;
-    descInput.value = task.description;
-    swimlaneSelect.value = task.swimlane;
-    colorInput.value = task.color;
+            // Fill modal with existing values
+            titleInput.value = task.title;
+            descInput.value = task.description;
+            swimlaneSelect.value = task.swimlane;
+            colorInput.value = task.color;
 
-    modal.style.display = 'flex';
-}
+            modal.style.display = 'flex';
+        }
 
-            function deleteTask(taskId) {
-    // Remove task from state
+        function deleteTask(taskId) {
+            // Remove task from state
             state.tasks = state.tasks.filter(t => t.id != taskId);
 
-    // Persist changes
+            // Persist changes
             saveState();
 
-    // Re-render board
+            // Re-render board
             renderBoard();
         }
+
+        const confirmModal = document.getElementById('confirmModal');
+
+        window.openDeleteConfirm = function(taskId) {
+            pendingDeleteId = taskId;
+            confirmModal.style.display = 'flex';
+        };
+
+        window.cancelDelete = function() {
+            pendingDeleteId = null;
+            confirmModal.style.display = 'none';
+        };
+
+        window.confirmDelete = function() {
+            if (pendingDeleteId !== null) {
+                deleteTask(pendingDeleteId);
+            }
+            pendingDeleteId = null;
+            confirmModal.style.display = 'none';
+        };
         // --- HELPER FUNCTIONS (PROVIDED) ---
 
-       function createTaskElement(task) {
-    const el = document.createElement('div');
-    el.className = 'task';
-    el.draggable = true;
-    el.style.backgroundColor = task.color;
+        function createTaskElement(task) {
+            const el = document.createElement('div');
+            el.className = 'task';
+            el.draggable = true;
+            el.style.backgroundColor = task.color;
 
-    const title = document.createElement('div');
-    title.innerText = task.title;
+            const title = document.createElement('div');
+            title.innerText = task.title;
 
-    // Button container
-    const btnContainer = document.createElement('div');
-    btnContainer.style.display = "flex";
-    btnContainer.style.justifyContent = "flex-end";
-    btnContainer.style.gap = "5px";
+            // Button container
+            const btnContainer = document.createElement('div');
+            btnContainer.style.display = "flex";
+            btnContainer.style.justifyContent = "flex-end";
+            btnContainer.style.gap = "5px";
 
-    // Edit Button
-    const editBtn = document.createElement('button');
-    editBtn.innerText = "✎";
-    editBtn.style.border = "none";
-    editBtn.style.background = "transparent";
-    editBtn.style.cursor = "pointer";
+            // Edit Button
+            const editBtn = document.createElement('button');
+            editBtn.innerText = "✎";
+            editBtn.style.border = "none";
+            editBtn.style.background = "transparent";
+            editBtn.style.cursor = "pointer";
 
-    editBtn.addEventListener('click', () => {
-        openEditModal(task.id);
-    });
+            editBtn.addEventListener('click', () => {
+                openEditModal(task.id);
+            });
 
-    // Delete Button
-    const deleteBtn = document.createElement('button');
-    deleteBtn.innerText = "✕";
-    deleteBtn.style.border = "none";
-    deleteBtn.style.background = "transparent";
-    deleteBtn.style.cursor = "pointer";
+            // Delete Button
+            const deleteBtn = document.createElement('button');
+            deleteBtn.innerText = "✕";
+            deleteBtn.style.border = "none";
+            deleteBtn.style.background = "transparent";
+            deleteBtn.style.cursor = "pointer";
 
-    deleteBtn.addEventListener('click', () => {
-        if (confirm("Delete this task?")) {
-            deleteTask(task.id);
+            deleteBtn.addEventListener('click', () => {
+                // Use a custom confirmation modal instead of window.confirm(),
+                // since native confirm() dialogs can be silently blocked in
+                // sandboxed/embedded previews, which made Delete appear to do nothing.
+                openDeleteConfirm(task.id);
+            });
+
+            btnContainer.appendChild(editBtn);
+            btnContainer.appendChild(deleteBtn);
+
+            el.appendChild(btnContainer);
+            el.appendChild(title);
+
+            el.addEventListener('dragstart', (e) => {
+                e.dataTransfer.setData('text/plain', task.id);
+                e.dataTransfer.effectAllowed = 'move';
+            });
+
+            return el;
         }
-    });
-
-    btnContainer.appendChild(editBtn);
-    btnContainer.appendChild(deleteBtn);
-
-    el.appendChild(btnContainer);
-    el.appendChild(title);
-
-    el.addEventListener('dragstart', (e) => {
-        e.dataTransfer.setData('text/plain', task.id);
-        e.dataTransfer.effectAllowed = 'move';
-    });
-
-    return el;
-}
         // Modal Logic
         const modal = document.getElementById('taskModal');
         const titleInput = document.getElementById('taskTitle');
@@ -287,49 +316,58 @@
         const colorInput = document.getElementById('taskColor');
 
         window.openModal = function(swimlaneId) {
+            editingTaskId = null; // ensure the "+ Add Task" path always starts a fresh create
             swimlaneSelect.value = swimlaneId;
+            titleInput.value = '';
+            descInput.value = '';
+            colorInput.value = '#ffffff';
             modal.style.display = 'flex';
         };
 
-        window.closeModal = function() { modal.style.display = 'none'; };
-
-       window.saveTask = function() {
-
-    if (editingTaskId) {
-        // EDIT MODE
-        const task = state.tasks.find(t => t.id == editingTaskId);
-
-        if (task) {
-            task.title = titleInput.value;
-            task.description = descInput.value;
-            task.swimlane = swimlaneSelect.value;
-            task.color = colorInput.value;
-        }
-
-        editingTaskId = null;
-
-    } else {
-        // CREATE MODE
-        const newTask = {
-            id: Date.now(),
-            title: titleInput.value,
-            description: descInput.value,
-            swimlane: swimlaneSelect.value,
-            status: 'todo',
-            color: colorInput.value
+        window.closeModal = function() {
+            // Issue 1 fix: reset editingTaskId whenever the modal is closed/cancelled,
+            // so a later "Add Task" cannot accidentally overwrite the last-edited task.
+            editingTaskId = null;
+            modal.style.display = 'none';
         };
 
-        state.tasks.push(newTask);
-    }
+        window.saveTask = function() {
 
-    saveState();
-    renderBoard();
-    closeModal();
+            if (editingTaskId) {
+                // EDIT MODE
+                const task = state.tasks.find(t => t.id == editingTaskId);
 
-    // Reset form
-    titleInput.value = '';
-    descInput.value = '';
-};
+                if (task) {
+                    task.title = titleInput.value;
+                    task.description = descInput.value;
+                    task.swimlane = swimlaneSelect.value;
+                    task.color = colorInput.value;
+                }
+
+                editingTaskId = null;
+
+            } else {
+                // CREATE MODE
+                const newTask = {
+                    id: Date.now(),
+                    title: titleInput.value,
+                    description: descInput.value,
+                    swimlane: swimlaneSelect.value,
+                    status: 'todo',
+                    color: colorInput.value
+                };
+
+                state.tasks.push(newTask);
+            }
+
+            saveState();
+            renderBoard();
+            closeModal();
+
+            // Reset form
+            titleInput.value = '';
+            descInput.value = '';
+        };
         // Initialize
         loadState();
         renderBoard();
